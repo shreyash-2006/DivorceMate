@@ -101,7 +101,7 @@ const formErrorMsg = document.getElementById('form-error-msg');
 
 // Flask backend URL
 // Change to your production URL when deployed (e.g. 'https://yourdomain.com')
-const BACKEND_URL = 'http://localhost:5000';
+const BACKEND_URL = 'https://divorcemate.onrender.com';
 
 function showError(fieldId, errorId, message) {
   const field = document.getElementById(fieldId);
