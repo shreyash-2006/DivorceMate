@@ -244,14 +244,20 @@ contactForm.addEventListener('submit', async function (e) {
       document.querySelectorAll('.error').forEach(el => el.classList.remove('error'));
       formSuccess.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } else {
-      // Formspree returned an error
-      const data = await response.json();
-      console.error('Formspree error:', data);
+      // Server returned an error — show actual message
+      let errMsg = 'Something went wrong. Please try again or email us directly.';
+      try {
+        const data = await response.json();
+        if (data.error) errMsg = data.error;
+        console.error('Server error:', data);
+      } catch (_) {}
+      formErrorMsg.querySelector('p').textContent = errMsg;
       formErrorMsg.style.display = 'flex';
     }
   } catch (err) {
     // Network or other error
     console.error('Submission error:', err);
+    formErrorMsg.querySelector('p').textContent = 'Could not reach the server. Please check your connection.';
     formErrorMsg.style.display = 'flex';
   } finally {
     btnText.style.display = 'inline';
