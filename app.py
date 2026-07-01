@@ -107,27 +107,6 @@ def serve_assets(filename):
     return send_from_directory(os.path.join(BASE_DIR, "assets"), filename)
 
 
-# ─── Debug Route (remove after confirming email works) ───
-@app.route("/test-email", methods=["GET"])
-def test_email():
-    if not SENDGRID_API_KEY or not SENDER_EMAIL:
-        return jsonify({
-            "error": "Env vars missing",
-            "SENDGRID_API_KEY_set": bool(SENDGRID_API_KEY),
-            "SENDER_EMAIL_set": bool(SENDER_EMAIL)
-        }), 500
-    try:
-        status = send_email(
-            name="Test User", email=SENDER_EMAIL,
-            phone="N/A", subject="SMTP Test",
-            message="This is a test email from DivorCEmate on Render."
-        )
-        return jsonify({"success": True, "sendgrid_status": status,
-                        "sent_to": RECEIVER_EMAIL}), 200
-    except Exception as e:
-        return jsonify({"error": str(e), "type": type(e).__name__}), 500
-
-
 # ─── Email API ────────────────────────────────
 @app.route("/send-email", methods=["POST"])
 def handle_contact():
