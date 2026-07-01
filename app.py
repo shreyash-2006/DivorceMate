@@ -26,9 +26,9 @@ CORS(app)
 # ─── SMTP Configuration ───────────────────────
 SMTP_HOST     = "smtp.gmail.com"
 SMTP_PORT     = 587
-SENDER_EMAIL  = os.environ.get("SENDER_EMAIL")   # Your Gmail address
-SENDER_PASS   = os.environ.get("SENDER_PASS")    # Gmail App Password (NOT your login password)
-RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL", "divorcematequeries@gmail.com")
+SENDER_EMAIL  = (os.environ.get("SENDER_EMAIL") or "").strip()
+SENDER_PASS   = (os.environ.get("SENDER_PASS") or "").replace(" ", "")  # remove any spaces
+RECEIVER_EMAIL = (os.environ.get("RECEIVER_EMAIL") or "divorcematequeries@gmail.com").strip()
 
 
 # ─── Helper: send email via Gmail SMTP ────────
@@ -99,6 +99,27 @@ def send_email(name, email, phone, subject, message):
 def index():
     """Serve the frontend website."""
     return send_from_directory('.', 'index.html')
+
+
+@app.route("/test-email", methods=["GET"])
+def test_email():
+    """Debug route: tests SMTP login and sends a test email. Remove after confirming it works."""
+    if not SENDER_EMAIL or not SENDER_PASS:
+        return jsonify({"error": "Env vars missing", "SENDER_EMAIL": bool(SENDER_EMAIL), "SENDER_PASS": bool(SENDER_PASS)}), 500
+    try:
+        import smtplib as _s
+        with _s.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASS)
+            server.sendmail(
+                SENDER_EMAIL, RECEIVER_EMAIL,
+                f"Subject: DivorCEmate SMTP Test\n\nSMTP is working correctly on Render!"
+            )
+        return jsonify({"success": True, "message": f"Test email sent to {RECEIVER_EMAIL}"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e), "type": type(e).__name__,
+                        "sender": SENDER_EMAIL, "pass_len": len(SENDER_PASS)}), 500
 
 
 @app.route("/send-email", methods=["POST"])
