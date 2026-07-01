@@ -1,9 +1,9 @@
 """
-DivorCEmate – Flask Email Backend
-Handles contact form submissions and sends emails via Gmail SMTP.
+DivorCEmate – Flask Backend
+Serves the frontend and handles contact form email via Gmail SMTP.
 
-Setup:
-  1. Copy .env.example to .env and fill in your credentials
+Local dev:
+  1. Copy .env.example → .env, fill credentials
   2. pip install -r requirements.txt
   3. python app.py
 """
@@ -16,18 +16,21 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-# ─── Load environment variables ──────────────
-load_dotenv()
+# ─── Paths ───────────────────────────────────
+# Always use the directory where app.py lives — works locally AND on Render
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Serve static files (CSS, JS, images) from the project root directory
-app = Flask(__name__, static_folder='.', static_url_path='')
+# ─── Load environment variables ──────────────
+load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+app = Flask(__name__)
 CORS(app)
 
 # ─── SMTP Configuration ───────────────────────
-SMTP_HOST     = "smtp.gmail.com"
-SMTP_PORT     = 587
-SENDER_EMAIL  = (os.environ.get("SENDER_EMAIL") or "").strip()
-SENDER_PASS   = (os.environ.get("SENDER_PASS") or "").replace(" ", "")  # remove any spaces
+SMTP_HOST      = "smtp.gmail.com"
+SMTP_PORT      = 587
+SENDER_EMAIL   = (os.environ.get("SENDER_EMAIL") or "").strip()
+SENDER_PASS    = (os.environ.get("SENDER_PASS")  or "").replace(" ", "")  # strip spaces
 RECEIVER_EMAIL = (os.environ.get("RECEIVER_EMAIL") or "divorcematequeries@gmail.com").strip()
 
 
@@ -37,9 +40,8 @@ def send_email(name, email, phone, subject, message):
     msg["Subject"] = f"[DivorCEmate Enquiry] {subject} – {name}"
     msg["From"]    = SENDER_EMAIL
     msg["To"]      = RECEIVER_EMAIL
-    msg["Reply-To"] = email  # Replying goes directly to the enquirer
+    msg["Reply-To"] = email
 
-    # Plain-text fallback
     plain_body = (
         f"New Enquiry from DivorCEmate Website\n"
         f"=====================================\n\n"
@@ -51,7 +53,6 @@ def send_email(name, email, phone, subject, message):
         f"---\nSent via DivorCEmate Contact Form"
     )
 
-    # HTML email body
     html_body = f"""
     <!DOCTYPE html>
     <html>
@@ -94,50 +95,67 @@ def send_email(name, email, phone, subject, message):
         server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
 
 
-# ─── Routes ───────────────────────────────────
-@app.route("/", methods=["GET"])
+# ─── Static File Routes ───────────────────────
+# Serve all frontend files explicitly using BASE_DIR (absolute path).
+# This is more reliable than Flask's static_folder on cloud platforms.
+
+@app.route("/")
 def index():
-    """Serve the frontend website."""
-    return send_from_directory('.', 'index.html')
+    return send_from_directory(BASE_DIR, "index.html")
+
+@app.route("/style.css")
+def serve_css():
+    return send_from_directory(BASE_DIR, "style.css")
+
+@app.route("/script.js")
+def serve_js():
+    return send_from_directory(BASE_DIR, "script.js")
+
+@app.route("/assets/<path:filename>")
+def serve_assets(filename):
+    return send_from_directory(os.path.join(BASE_DIR, "assets"), filename)
 
 
+# ─── Debug Route (remove after confirming email works) ───
 @app.route("/test-email", methods=["GET"])
 def test_email():
-    """Debug route: tests SMTP login and sends a test email. Remove after confirming it works."""
     if not SENDER_EMAIL or not SENDER_PASS:
-        return jsonify({"error": "Env vars missing", "SENDER_EMAIL": bool(SENDER_EMAIL), "SENDER_PASS": bool(SENDER_PASS)}), 500
+        return jsonify({
+            "error": "Env vars missing",
+            "SENDER_EMAIL_set": bool(SENDER_EMAIL),
+            "SENDER_PASS_set": bool(SENDER_PASS)
+        }), 500
     try:
-        import smtplib as _s
-        with _s.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
             server.ehlo()
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASS)
             server.sendmail(
                 SENDER_EMAIL, RECEIVER_EMAIL,
-                f"Subject: DivorCEmate SMTP Test\n\nSMTP is working correctly on Render!"
+                f"Subject: DivorCEmate SMTP Test\n\nSMTP is working on Render!"
             )
-        return jsonify({"success": True, "message": f"Test email sent to {RECEIVER_EMAIL}"}), 200
+        return jsonify({"success": True, "sent_to": RECEIVER_EMAIL,
+                        "sender": SENDER_EMAIL, "pass_len": len(SENDER_PASS)}), 200
     except Exception as e:
         return jsonify({"error": str(e), "type": type(e).__name__,
                         "sender": SENDER_EMAIL, "pass_len": len(SENDER_PASS)}), 500
 
 
+# ─── Email API ────────────────────────────────
 @app.route("/send-email", methods=["POST"])
 def handle_contact():
-    # Validate environment config
     if not SENDER_EMAIL or not SENDER_PASS:
         return jsonify({
-            "error": "Server misconfiguration: SENDER_EMAIL or SENDER_PASS not set in .env"
+            "error": "Server misconfiguration: SENDER_EMAIL or SENDER_PASS not set"
         }), 500
 
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "Invalid request – expected JSON body"}), 400
 
-    # Extract and validate fields
-    name    = (data.get("name") or "").strip()
-    email   = (data.get("email") or "").strip()
-    phone   = (data.get("phone") or "Not provided").strip()
+    name    = (data.get("name")    or "").strip()
+    email   = (data.get("email")   or "").strip()
+    phone   = (data.get("phone")   or "Not provided").strip()
     subject = (data.get("subject") or "").strip()
     message = (data.get("message") or "").strip()
 
@@ -146,11 +164,9 @@ def handle_contact():
 
     try:
         send_email(name, email, phone, subject, message)
-        return jsonify({"success": True, "message": "Email sent successfully"}), 200
+        return jsonify({"success": True}), 200
     except smtplib.SMTPAuthenticationError:
-        return jsonify({
-            "error": "SMTP authentication failed. Check your Gmail App Password in .env"
-        }), 500
+        return jsonify({"error": "SMTP authentication failed. Check your Gmail App Password on Render."}), 500
     except Exception as exc:
         return jsonify({"error": f"Failed to send email: {str(exc)}"}), 500
 
@@ -158,5 +174,5 @@ def handle_contact():
 # ─── Entry Point ──────────────────────────────
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"✅  DivorCEmate email server running on http://localhost:{port}")
+    print(f"✅  DivorCEmate server running → http://localhost:{port}")
     app.run(host="0.0.0.0", port=port, debug=False)
