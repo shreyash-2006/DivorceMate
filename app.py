@@ -88,7 +88,7 @@ def send_email(name, email, phone, subject, message):
     msg.attach(MIMEText(plain_body, "plain"))
     msg.attach(MIMEText(html_body, "html"))
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
         server.ehlo()
         server.starttls()
         server.login(SENDER_EMAIL, SENDER_PASS)
@@ -126,7 +126,7 @@ def test_email():
             "SENDER_PASS_set": bool(SENDER_PASS)
         }), 500
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
             server.ehlo()
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASS)
