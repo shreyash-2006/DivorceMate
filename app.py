@@ -12,15 +12,16 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 
 # ─── Load environment variables ──────────────
 load_dotenv()
 
-app = Flask(__name__)
-CORS(app)  # Allow requests from the frontend (any origin)
+# Serve static files (CSS, JS, images) from the project root directory
+app = Flask(__name__, static_folder='.', static_url_path='')
+CORS(app)
 
 # ─── SMTP Configuration ───────────────────────
 SMTP_HOST     = "smtp.gmail.com"
@@ -95,8 +96,9 @@ def send_email(name, email, phone, subject, message):
 
 # ─── Routes ───────────────────────────────────
 @app.route("/", methods=["GET"])
-def health():
-    return jsonify({"status": "DivorCEmate email server is running ✅"}), 200
+def index():
+    """Serve the frontend website."""
+    return send_from_directory('.', 'index.html')
 
 
 @app.route("/send-email", methods=["POST"])

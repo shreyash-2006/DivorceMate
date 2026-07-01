@@ -99,9 +99,9 @@ const submitBtn = document.getElementById('submit-btn');
 const formSuccess = document.getElementById('form-success');
 const formErrorMsg = document.getElementById('form-error-msg');
 
-// Flask backend URL
-// Change to your production URL when deployed (e.g. 'https://yourdomain.com')
-const BACKEND_URL = 'https://divorcemate.onrender.com';
+// Backend URL — empty string means relative path (works on any host)
+// For local development the fetch goes to /send-email on localhost:5000
+const BACKEND_URL = '';
 
 function showError(fieldId, errorId, message) {
   const field = document.getElementById(fieldId);
