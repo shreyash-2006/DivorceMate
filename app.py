@@ -1,57 +1,38 @@
 """
 DivorCEmate – Flask Backend
-Serves the frontend and handles contact form email via Gmail SMTP.
+Serves the frontend and sends contact form emails via SendGrid HTTP API.
+SendGrid bypasses Render's SMTP port block by using HTTPS (port 443).
 
 Local dev:
-  1. Copy .env.example → .env, fill credentials
+  1. Copy .env.example → .env and fill credentials
   2. pip install -r requirements.txt
   3. python app.py
 """
 
 import os
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 
 # ─── Paths ───────────────────────────────────
-# Always use the directory where app.py lives — works locally AND on Render
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# ─── Load environment variables ──────────────
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 app = Flask(__name__)
 CORS(app)
 
-# ─── SMTP Configuration ───────────────────────
-SMTP_HOST      = "smtp.gmail.com"
-SMTP_PORT      = 587
-SENDER_EMAIL   = (os.environ.get("SENDER_EMAIL") or "").strip()
-SENDER_PASS    = (os.environ.get("SENDER_PASS")  or "").replace(" ", "")  # strip spaces
-RECEIVER_EMAIL = (os.environ.get("RECEIVER_EMAIL") or "divorcematequeries@gmail.com").strip()
+# ─── Email Configuration ──────────────────────
+SENDGRID_API_KEY = (os.environ.get("SENDGRID_API_KEY") or "").strip()
+SENDER_EMAIL     = (os.environ.get("SENDER_EMAIL") or "").strip()
+RECEIVER_EMAIL   = (os.environ.get("RECEIVER_EMAIL") or "divorcematequeries@gmail.com").strip()
 
 
-# ─── Helper: send email via Gmail SMTP ────────
+# ─── Helper: send email via SendGrid API ──────
 def send_email(name, email, phone, subject, message):
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"[DivorCEmate Enquiry] {subject} – {name}"
-    msg["From"]    = SENDER_EMAIL
-    msg["To"]      = RECEIVER_EMAIL
-    msg["Reply-To"] = email
+    import sendgrid
+    from sendgrid.helpers.mail import Mail, Email, To, Content, ReplyTo
 
-    plain_body = (
-        f"New Enquiry from DivorCEmate Website\n"
-        f"=====================================\n\n"
-        f"Name:    {name}\n"
-        f"Email:   {email}\n"
-        f"Phone:   {phone}\n"
-        f"Subject: {subject}\n\n"
-        f"Message:\n{message}\n\n"
-        f"---\nSent via DivorCEmate Contact Form"
-    )
+    sg = sendgrid.SendGridAPIClient(api_key=SENDGRID_API_KEY)
 
     html_body = f"""
     <!DOCTYPE html>
@@ -85,20 +66,30 @@ def send_email(name, email, phone, subject, message):
     </html>
     """
 
-    msg.attach(MIMEText(plain_body, "plain"))
-    msg.attach(MIMEText(html_body, "html"))
+    plain_body = (
+        f"New Enquiry from DivorCEmate\n"
+        f"============================\n\n"
+        f"Name:    {name}\n"
+        f"Email:   {email}\n"
+        f"Phone:   {phone}\n"
+        f"Subject: {subject}\n\n"
+        f"Message:\n{message}"
+    )
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-        server.ehlo()
-        server.starttls()
-        server.login(SENDER_EMAIL, SENDER_PASS)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+    mail = Mail(
+        from_email=Email(SENDER_EMAIL, "DivorCEmate"),
+        to_emails=To(RECEIVER_EMAIL),
+        subject=f"[DivorCEmate Enquiry] {subject} – {name}",
+        plain_text_content=plain_body,
+        html_content=html_body
+    )
+    mail.reply_to = ReplyTo(email, name)   # replying goes to the enquirer
+
+    response = sg.client.mail.send.post(request_body=mail.get())
+    return response.status_code
 
 
 # ─── Static File Routes ───────────────────────
-# Serve all frontend files explicitly using BASE_DIR (absolute path).
-# This is more reliable than Flask's static_folder on cloud platforms.
-
 @app.route("/")
 def index():
     return send_from_directory(BASE_DIR, "index.html")
@@ -119,35 +110,29 @@ def serve_assets(filename):
 # ─── Debug Route (remove after confirming email works) ───
 @app.route("/test-email", methods=["GET"])
 def test_email():
-    if not SENDER_EMAIL or not SENDER_PASS:
+    if not SENDGRID_API_KEY or not SENDER_EMAIL:
         return jsonify({
             "error": "Env vars missing",
-            "SENDER_EMAIL_set": bool(SENDER_EMAIL),
-            "SENDER_PASS_set": bool(SENDER_PASS)
+            "SENDGRID_API_KEY_set": bool(SENDGRID_API_KEY),
+            "SENDER_EMAIL_set": bool(SENDER_EMAIL)
         }), 500
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASS)
-            server.sendmail(
-                SENDER_EMAIL, RECEIVER_EMAIL,
-                f"Subject: DivorCEmate SMTP Test\n\nSMTP is working on Render!"
-            )
-        return jsonify({"success": True, "sent_to": RECEIVER_EMAIL,
-                        "sender": SENDER_EMAIL, "pass_len": len(SENDER_PASS)}), 200
+        status = send_email(
+            name="Test User", email=SENDER_EMAIL,
+            phone="N/A", subject="SMTP Test",
+            message="This is a test email from DivorCEmate on Render."
+        )
+        return jsonify({"success": True, "sendgrid_status": status,
+                        "sent_to": RECEIVER_EMAIL}), 200
     except Exception as e:
-        return jsonify({"error": str(e), "type": type(e).__name__,
-                        "sender": SENDER_EMAIL, "pass_len": len(SENDER_PASS)}), 500
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
 # ─── Email API ────────────────────────────────
 @app.route("/send-email", methods=["POST"])
 def handle_contact():
-    if not SENDER_EMAIL or not SENDER_PASS:
-        return jsonify({
-            "error": "Server misconfiguration: SENDER_EMAIL or SENDER_PASS not set"
-        }), 500
+    if not SENDGRID_API_KEY or not SENDER_EMAIL:
+        return jsonify({"error": "Server misconfiguration: SENDGRID_API_KEY or SENDER_EMAIL not set"}), 500
 
     data = request.get_json(silent=True)
     if not data:
@@ -165,8 +150,6 @@ def handle_contact():
     try:
         send_email(name, email, phone, subject, message)
         return jsonify({"success": True}), 200
-    except smtplib.SMTPAuthenticationError:
-        return jsonify({"error": "SMTP authentication failed. Check your Gmail App Password on Render."}), 500
     except Exception as exc:
         return jsonify({"error": f"Failed to send email: {str(exc)}"}), 500
 
